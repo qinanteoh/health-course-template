@@ -10,7 +10,7 @@
 - 一部电脑（第一次设定用电脑比较方便）
 
 ## 建立你自己的 App（大约 10 分钟）
-1. 按上面蓝色的 **Deploy to Cloudflare** 按钮。
+1. 按上面橙色的 **Deploy to Cloudflare** 按钮（就在标题下面）。
 2. 用你的 Cloudflare 账号登录，再按提示连接你的 GitHub 账号。
 3. 设定页面会出现几栏：
    - **Project name / Worker name**：你的 App 名称，只能用小写英文、数字和横线，例如 `amy-health`。这会变成你的网址的一部分。
