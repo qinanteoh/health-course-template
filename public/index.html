@@ -400,9 +400,9 @@ html:not([lang=zh]) .swap-row{grid-template-columns:minmax(0,1fr) 18px minmax(0,
 .lang button{font:inherit;font-size:13px;font-weight:700;border:0;background:transparent;color:var(--muted);padding:5px 11px;cursor:pointer;min-height:30px}
 .lang button.on{background:var(--leaf);color:var(--surface)}
 /* read-aloud follow-along highlight: sentence being read, the part already read, the character/word being read now */
-::highlight(tts-sent){background-color:rgba(232,137,43,.16)}
-::highlight(tts-read){background-color:rgba(232,137,43,.34)}
-::highlight(tts-word){background-color:#e8892b;color:#fff}
+tts-c{display:inline;background:rgba(232,137,43,.16)}
+tts-c.r{background:rgba(232,137,43,.34)}
+tts-c.w{background:#e8892b;color:#fff;border-radius:3px}
 .tts-el{background:rgba(232,137,43,.22);border-radius:6px}
 
 /* ===== src/app/css/5-login-protection.css ===== */
@@ -1149,34 +1149,48 @@ function ttsScript(n){
   return parts;
 }
 
-const HL = (typeof CSS!=="undefined" && CSS.highlights && typeof Highlight!=="undefined") ? { sent: new Highlight(), read: new Highlight(), word: new Highlight() } : null;
-if(HL){ HL.sent.priority = 1; HL.read.priority = 2; HL.word.priority = 3; CSS.highlights.set("tts-sent", HL.sent); CSS.highlights.set("tts-read", HL.read); CSS.highlights.set("tts-word", HL.word); }
-function hlRange(el, a, b){
-  if(!el || a<0 || b<=a) return null;
-  const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let pos = 0, node, st = false; const r = document.createRange();
-  while((node = w.nextNode())){ const L = node.length;
-    if(!st && a < pos+L){ r.setStart(node, a-pos); st = true; }
-    if(st && b <= pos+L){ r.setEnd(node, b-pos); return r; }
-    pos += L; }
-  if(st){ r.setEndAfter(el.lastChild||el); return r; } return null;
+// The sentence being read is wrapped, one character per <tts-c> (own tag, so no page style for spans touches it), so every browser (older iPhones included)
+// can colour it; the spans are removed again when the next sentence starts or reading stops.
+// Classes: none = sentence being read, r = already read, w = character/word being read now.
+const HL = { spans: [], map: [], c: null };
+function hlUnwrap(){
+  const parents = new Set();
+  HL.spans.forEach(sp=>{ const p = sp.parentNode; if(p){ p.replaceChild(document.createTextNode(sp.textContent), sp); parents.add(p); } });
+  parents.forEach(p=>p.normalize());
+  HL.spans = []; HL.map = []; HL.c = null;
 }
-function hlClear(){ if(HL){ HL.sent.clear(); HL.read.clear(); HL.word.clear(); } document.querySelectorAll(".tts-el").forEach(x=>x.classList.remove("tts-el")); }
+function hlWrap(el, a, b){ // wrap characters [a,b) of el's text; HL.map[offset-a] = span index
+  const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let pos = 0, node;
+  while((node = w.nextNode())){ const L = node.length; if(pos+L > a && pos < b) nodes.push([node, pos]); pos += L; if(pos >= b) break; }
+  nodes.forEach(([n, start])=>{
+    const t = n.data, from = Math.max(0, a-start), to = Math.min(t.length, b-start), frag = document.createDocumentFragment();
+    if(from > 0) frag.appendChild(document.createTextNode(t.slice(0, from)));
+    for(let i = from; i < to; ){
+      const two = /[\uD800-\uDBFF]/.test(t[i]) && i+1 < to, ch = two ? t.slice(i, i+2) : t[i];
+      const sp = document.createElement("tts-c"); sp.textContent = ch; frag.appendChild(sp);
+      HL.map[start+i-a] = HL.spans.length; if(two) HL.map[start+i+1-a] = HL.spans.length;
+      HL.spans.push(sp); i += two ? 2 : 1;
+    }
+    if(to < t.length) frag.appendChild(document.createTextNode(t.slice(to)));
+    n.parentNode.replaceChild(frag, n);
+  });
+}
+function hlClear(){ hlUnwrap(); document.querySelectorAll(".tts-el").forEach(x=>x.classList.remove("tts-el")); }
 function hlSentence(c){
   hlClear(); if(!c || !c.el) return;
-  if(HL && c.a>=0){ const r = hlRange(c.el, c.a, c.b); if(r) HL.sent.add(r); } else c.el.classList.add("tts-el");
+  if(c.a>=0){ try{ hlWrap(c.el, c.a, c.b); HL.c = c; }catch(e){ hlUnwrap(); c.el.classList.add("tts-el"); } } else c.el.classList.add("tts-el");
   const rc = c.el.getBoundingClientRect();
   if(rc.top < 70 || rc.bottom > innerHeight-40) c.el.scrollIntoView({behavior:"smooth", block:"center"});
 }
 function hlWord(c, pos, len){ // pos/len in shown-text coordinates
-  if(!HL || !c || !c.el || c.a<0) return;
+  if(!c || HL.c!==c || !HL.spans.length) return;
   const L = c.shown.length; pos = Math.max(0, Math.min(L, pos));
   while(pos < L && /[\s，。、！？；：,.!?;:“”「」（）()·]/.test(c.shown[pos])) pos++;
-  HL.word.clear(); HL.read.clear();
-  if(pos >= L){ const r = hlRange(c.el, c.a, c.b); if(r) HL.read.add(r); return; }
-  let e = pos + Math.max(1, len||0);
-  if(!len){ if(/[㐀-鿿]/.test(c.shown[pos])) e = pos+1; else { e = pos; while(e < L && /[A-Za-z0-9À-ÿ'’%.\-]/.test(c.shown[e]) && !(c.shown[e]==="." && !/\d/.test(c.shown[e+1]||""))) e++; if(e===pos) e = pos+1; } }
-  const rw = hlRange(c.el, c.a+pos, c.a+Math.min(L,e)); if(rw) HL.word.add(rw);
-  if(pos>0){ const rr = hlRange(c.el, c.a, c.a+pos); if(rr) HL.read.add(rr); }
+  let e = L;
+  if(pos < L){ e = pos + Math.max(1, len||0);
+    if(!len){ if(/[㐀-鿿]/.test(c.shown[pos])) e = pos+1; else { e = pos; while(e < L && /[A-Za-z0-9À-ÿ'’%.\-]/.test(c.shown[e]) && !(c.shown[e]==="." && !/\d/.test(c.shown[e+1]||""))) e++; if(e===pos) e = pos+1; } } }
+  const ws = pos < L ? HL.map[pos] : HL.spans.length, we = pos < L ? (HL.map[Math.min(L,e)-1] ?? ws) : HL.spans.length-1;
+  HL.spans.forEach((sp,i)=>{ const k = i < ws ? "r" : (i <= we && pos < L ? "w" : (pos >= L ? "r" : "")); if(sp.className !== k) sp.className = k; });
 }
 // time model for voices that don't report positions: weight per shown character, speed learned as it reads
 function ttsW(ch){ if(/[㐀-鿿]/.test(ch)) return 1; if(/[。！？；!?;]/.test(ch)) return 2.2; if(/[，、：,:]/.test(ch)) return 1.4; if(/\s/.test(ch)) return LANG==="zh"?0.2:0.35; if(/\d/.test(ch)) return LANG==="zh"?0.9:0.55; return LANG==="zh"?0.45:0.3; }
