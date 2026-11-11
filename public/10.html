@@ -57,6 +57,9 @@ header p{color:var(--muted)}
 .tile.sel{outline:3px solid var(--ink);outline-offset:2px}
 .tile:focus-visible{outline:3px solid var(--sun);outline-offset:2px}
 
+/* 10-day calendar: 2 rows of 5 */
+.week.five{grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.week.five .tile{aspect-ratio:auto;height:clamp(58px,15vw,78px)}
 
 /* ===== src/app/css/2-lesson.css ===== */
 .lesson{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px clamp(16px,5vw,32px) 28px;display:flex;flex-direction:column;gap:22px;min-width:0}
@@ -396,6 +399,11 @@ html:not([lang=zh]) .swap-row{grid-template-columns:minmax(0,1fr) 18px minmax(0,
 .lang{display:inline-flex;border:1px solid var(--line);border-radius:99px;overflow:hidden;background:var(--surface);flex:none}
 .lang button{font:inherit;font-size:13px;font-weight:700;border:0;background:transparent;color:var(--muted);padding:5px 11px;cursor:pointer;min-height:30px}
 .lang button.on{background:var(--leaf);color:var(--surface)}
+/* read-aloud follow-along highlight: sentence being read, the part already read, the character/word being read now */
+::highlight(tts-sent){background-color:rgba(232,137,43,.16)}
+::highlight(tts-read){background-color:rgba(232,137,43,.34)}
+::highlight(tts-word){background-color:#e8892b;color:#fff}
+.tts-el{background:rgba(232,137,43,.22);border-radius:6px}
 
 /* ===== src/app/css/5-login-protection.css ===== */
 .wm{position:fixed;inset:0;z-index:40;pointer-events:none;background-repeat:repeat}
@@ -549,15 +557,6 @@ footer{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:
 @media (max-width:600px){.lb img{max-width:none;max-height:none;width:180vw}}
 .lb-close{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));right:calc(12px + env(safe-area-inset-right,0px));background:#fff;color:#15302a;border:0;border-radius:99px;padding:8px 16px;font:inherit;font-weight:700;cursor:pointer;z-index:51}
 @media (prefers-reduced-motion:no-preference){.lesson{animation:rise .35s ease-out both}@keyframes rise{from{transform:translateY(6px)}to{transform:none}}}
-
-/* ===== src/app/css-10/1-ten-day.css ===== */
-/* 10-day page only: calendar is 2 rows of 5; read-aloud follow-along highlight */
-.week.five{grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
-.week.five .tile{aspect-ratio:auto;height:clamp(58px,15vw,78px)}
-::highlight(tts-sent){background-color:rgba(232,137,43,.16)}
-::highlight(tts-read){background-color:rgba(232,137,43,.34)}
-::highlight(tts-word){background-color:#e8892b;color:#fff}
-.tts-el{background:rgba(232,137,43,.22);border-radius:6px}
 
 </style>
 </head><body>
@@ -1099,42 +1098,138 @@ function ttsClean(s){
     .replace(/(\d)\s*g\b/g,"$1克").replace(/→|＋|\+/g,"，").replace(/[「」“”《》（）()·•]/g," ").replace(/\s+/g," ").trim();
 }
 function ttsSplit(s){ const out=[]; String(s).split(/(?<=[。！？；!?;]|\.\s)/).forEach(x=>{ x=x.trim(); while(x.length>(LANG==="zh"?140:220)){ let k = LANG==="zh"?140:x.lastIndexOf(" ",220); if(k<60) k=220; out.push(x.slice(0,k)); x=x.slice(k).trim(); } if(x) out.push(x); }); return out; }
+/* follow-along highlight: each spoken sentence remembers which on-screen text it reads (el + start/end offsets), so the page
+   shades the sentence and marks the character (Chinese) or word (English / Malay) being read. Word positions come from
+   onboundary where the browser gives them (iPhone, Mac); otherwise they are estimated from elapsed time, re-calibrated per sentence. */
+function ttsSegs(s){ // [start,end] sentence ranges inside s (same breaks as ttsSplit)
+  s = String(s||""); const out = [], max = LANG==="zh"?140:220;
+  const push = (a,b)=>{ while(b-a>max){ let k = a+max; if(LANG!=="zh"){ const sp = s.lastIndexOf(" ", a+max); if(sp>a+60) k = sp; } out.push([a,k]); a = k; } if(s.slice(a,b).trim()) out.push([a,b]); };
+  const ends = []; s.replace(/[。！？；!?;]+|\.\s/g, (x,off)=>{ ends.push(off+x.length); return x; });
+  let a = 0; ends.forEach(e=>{ push(a,e); a = e; }); push(a, s.length);
+  return out;
+}
 function ttsScript(n){
   const d = DAYS[n-1], q = QS[n-1], parts = [];
-  const add = (text, pi) => ttsSplit(ttsClean(text)).forEach(s=>parts.push({s, pi}));
-  const zh = LANG==="zh", P = zh?"。":". ", end = x => /[。！？.!?:：]$/.test(String(x).trim()) ? x : x+P;
-  add(DN(n).replace(/ /g, zh?"":" ")+(zh?"，":". ")+end(d.t)); if(d.lead) add(d.lead); if(d.intro) add(d.intro);
-  if(q && q.q) add(T("先想一想：")+q.q+T(" 想好了，可以在页面上选出你的答案。"));
-  if(d.points){ add(end(T("今天要知道的 {0} 件事", d.points.length).replace(/ /g, zh?"":" "))); d.points.forEach((p,i)=>{ add(T("第{0}点，", i+1)+end(p.h), i); add(p.p, i); (p.list||[]).forEach(x=>add(end(x), i)); if(p.after) add(p.after, i); }); }
-  if(d.fact) add(T("关键数字：")+d.fact.num+(d.fact.unit||"")+P+d.fact.text);
-  if(d.myth) add(T("常见误区：")+d.myth.m+T(" 真相是：")+d.myth.f);
-  if(d.tips && d.tips.length) add(T("实用小技巧：")+d.tips.join(zh?"；":"; ")+P);
-  if(d.share) add(T("想一想：")+d.share);
-  if(d.task) add(T("今日小任务：")+d.task);
-  add(T("今天的讲解到这里，记得完成今日小任务。"));
+  const zh = LANG==="zh", dot = x => /[。！？.!?:：]$/.test(String(x).trim()) ? "" : (zh?"。":".");
+  const lesson = document.getElementById("lesson");
+  const $ = sel => typeof sel==="string" ? lesson.querySelector(sel) : sel;
+  // text: what is shown; el: where it is shown; pre/suf: spoken words that are not on screen
+  const add = (text, pi, el, pre, suf) => {
+    el = el ? $(el) : null; text = String(text||""); pre = pre||""; suf = suf||"";
+    const base = el ? el.textContent.indexOf(text) : -1;
+    const segs = ttsSegs(text);
+    if(!segs.length){ if(pre||suf) parts.push({s:ttsClean(pre+suf), pi}); return; }
+    segs.forEach(([a,b],k)=>{
+      const p = k===0?pre:"", x = k===segs.length-1?suf:"";
+      const shown = text.slice(a,b), clean = ttsClean(shown), cp = ttsClean(p), cx = ttsClean(x);
+      const s = (cp?cp+(zh?"":" "):"")+clean+(cx?(zh?"":" ")+cx:"");
+      parts.push({s, pi, el, a: base<0?-1:base+a, b: base<0?-1:base+b, shown, pre: s.indexOf(clean), clean});
+    });
+  };
+  const box = i => lesson.querySelector('.points>li[data-pi="'+i+'"]>div');
+  add(d.t, undefined, "h2", DN(n).replace(/ /g, zh?"":" ")+(zh?"，":". "), dot(d.t));
+  if(d.lead) add(d.lead, undefined, d.leadHL ? ".lead-hl p" : ".lead");
+  if(d.intro) add(d.intro, undefined, ".intro");
+  if(q && q.q) add(q.q, undefined, ".hook .q", T("先想一想："), T(" 想好了，可以在页面上选出你的答案。"));
+  if(d.points){
+    add(T("今天要知道的 {0} 件事", d.points.length), undefined, ".sec h3");
+    d.points.forEach((p,i)=>{ const b = box(i);
+      add(p.h, i, b && b.querySelector(":scope>b"), T("第{0}点，", i+1));
+      add(p.p, i, b && b.querySelector(":scope>.pt"));
+      (p.list||[]).forEach((x,j)=>add(x, i, b && b.querySelectorAll(":scope>.sub>li")[j], "", dot(x)));
+      if(p.after) add(p.after, i, b && b.querySelector(":scope>.pt-after"));
+    });
+  }
+  if(d.fact){ add(d.fact.num+(d.fact.unit||""), undefined, ".fact .num", T("关键数字：")); add(d.fact.text, undefined, ".fact p"); }
+  if(d.myth){ add(d.myth.m, undefined, ".myth .m p", T("常见误区：")); add(d.myth.f, undefined, ".myth .f p", T(" 真相是：").trim()); }
+  if(d.tips && d.tips.length){ const lis = lesson.querySelectorAll(".tips>li"); d.tips.forEach((t,i)=>add(t, undefined, lis[i], i===0?T("实用小技巧："):"", dot(t))); }
+  if(d.share) add(d.share, undefined, ".share .sq", T("想一想："));
+  if(d.task) add(d.task, undefined, ".task>p", T("今日小任务："));
+  parts.push({s: ttsClean(T("今天的讲解到这里，记得完成今日小任务。"))});
   return parts;
 }
-function ttsMark(pi){ document.querySelectorAll(".points>li.reading").forEach(x=>x.classList.remove("reading")); if(pi!==undefined){ const li = document.querySelector('.points>li[data-pi="'+pi+'"]'); if(li) li.classList.add("reading"); } }
+
+const HL = (typeof CSS!=="undefined" && CSS.highlights && typeof Highlight!=="undefined") ? { sent: new Highlight(), read: new Highlight(), word: new Highlight() } : null;
+if(HL){ HL.sent.priority = 1; HL.read.priority = 2; HL.word.priority = 3; CSS.highlights.set("tts-sent", HL.sent); CSS.highlights.set("tts-read", HL.read); CSS.highlights.set("tts-word", HL.word); }
+function hlRange(el, a, b){
+  if(!el || a<0 || b<=a) return null;
+  const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let pos = 0, node, st = false; const r = document.createRange();
+  while((node = w.nextNode())){ const L = node.length;
+    if(!st && a < pos+L){ r.setStart(node, a-pos); st = true; }
+    if(st && b <= pos+L){ r.setEnd(node, b-pos); return r; }
+    pos += L; }
+  if(st){ r.setEndAfter(el.lastChild||el); return r; } return null;
+}
+function hlClear(){ if(HL){ HL.sent.clear(); HL.read.clear(); HL.word.clear(); } document.querySelectorAll(".tts-el").forEach(x=>x.classList.remove("tts-el")); }
+function hlSentence(c){
+  hlClear(); if(!c || !c.el) return;
+  if(HL && c.a>=0){ const r = hlRange(c.el, c.a, c.b); if(r) HL.sent.add(r); } else c.el.classList.add("tts-el");
+  const rc = c.el.getBoundingClientRect();
+  if(rc.top < 70 || rc.bottom > innerHeight-40) c.el.scrollIntoView({behavior:"smooth", block:"center"});
+}
+function hlWord(c, pos, len){ // pos/len in shown-text coordinates
+  if(!HL || !c || !c.el || c.a<0) return;
+  const L = c.shown.length; pos = Math.max(0, Math.min(L, pos));
+  while(pos < L && /[\s，。、！？；：,.!?;:“”「」（）()·]/.test(c.shown[pos])) pos++;
+  HL.word.clear(); HL.read.clear();
+  if(pos >= L){ const r = hlRange(c.el, c.a, c.b); if(r) HL.read.add(r); return; }
+  let e = pos + Math.max(1, len||0);
+  if(!len){ if(/[㐀-鿿]/.test(c.shown[pos])) e = pos+1; else { e = pos; while(e < L && /[A-Za-z0-9À-ÿ'’%.\-]/.test(c.shown[e]) && !(c.shown[e]==="." && !/\d/.test(c.shown[e+1]||""))) e++; if(e===pos) e = pos+1; } }
+  const rw = hlRange(c.el, c.a+pos, c.a+Math.min(L,e)); if(rw) HL.word.add(rw);
+  if(pos>0){ const rr = hlRange(c.el, c.a, c.a+pos); if(rr) HL.read.add(rr); }
+}
+// time model for voices that don't report positions: weight per shown character, speed learned as it reads
+function ttsW(ch){ if(/[㐀-鿿]/.test(ch)) return 1; if(/[。！？；!?;]/.test(ch)) return 2.2; if(/[，、：,:]/.test(ch)) return 1.4; if(/\s/.test(ch)) return LANG==="zh"?0.2:0.35; if(/\d/.test(ch)) return LANG==="zh"?0.9:0.55; return LANG==="zh"?0.45:0.3; }
+function ttsWeights(str){ let t = 0; for(const ch of String(str)) t += ttsW(ch); return t; }
+TTS.cps = {zh:4.6, en:15, ms:14};
+function ttsTimerStop(){ if(TTS.timer){ clearInterval(TTS.timer); TTS.timer = null; } }
+function ttsTimerStart(c, u){
+  ttsTimerStop(); if(!c.el || c.a<0) return;
+  const preW = ttsWeights(c.s.slice(0, Math.max(0,c.pre))), cum = []; let t = preW;
+  for(const ch of c.shown){ cum.push(t); t += ttsW(ch); }
+  c.total = t + ttsWeights(c.s.slice(c.pre + c.clean.length)); c.elapsed = 0; let last = performance.now();
+  TTS.timer = setInterval(()=>{
+    if(TTS.cur!==u || TTS.paused){ ttsTimerStop(); return; }
+    const now = performance.now(), dt = (now-last)/1000; last = now;
+    if(TTS.boundary) return;
+    c.elapsed += dt; const w = c.elapsed * TTS.cps[LANG] * TTS.rate;
+    if(w < preW) return;
+    let i = 0; while(i < cum.length-1 && cum[i+1] <= w) i++;
+    hlWord(c, i);
+  }, 90);
+}
+function ttsMark(pi){ document.querySelectorAll(".points>li.reading").forEach(x=>x.classList.remove("reading")); if(pi!==undefined){ const li = document.querySelector('.points>li[data-pi="'+pi+'"]'); if(li) li.classList.add("reading"); } if(!TTS.on) hlClear(); }
+function ttsStop(){ TTS.on = false; TTS.paused = false; TTS.queue = []; clearTimeout(TTS.watch); TTS.cur = null; ttsTimerStop(); ttsHush(); ttsMark(); ttsUI(); }
+function ttsNext(){
+  if(!TTS.on || TTS.paused) return;
+  ttsTimerStop();
+  if(TTS.idx >= TTS.queue.length){ ttsStop(); const m=document.getElementById("ttsMsg"); if(m) m.textContent = T("讲解完毕"); return; }
+  const c = TTS.queue[TTS.idx++]; ttsMark(c.pi); hlSentence(c);
+  const u = new SpeechSynthesisUtterance(c.s); u.lang = (TTS.voice && TTS.voice.lang) || ({zh:"zh-CN",en:"en-GB",ms:"ms-MY"})[LANG]; if(TTS.voice) u.voice = TTS.voice; u.rate = TTS.rate;
+  TTS.cur = u; TTS.started = false; let t0 = 0;
+  u.onstart = ()=>{ TTS.started = true; clearTimeout(TTS.watch); const m=document.getElementById("ttsMsg"); if(m && m.dataset.hint) { m.textContent = ""; delete m.dataset.hint; }
+    if(TTS.cur===u){ t0 = performance.now(); ttsTimerStart(c, u); } };
+  u.onboundary = e=>{
+    if(TTS.cur!==u || e.name==="sentence" || !c.el || c.a<0) return;
+    if(e.charIndex>0 || e.charLength) TTS.boundary = true; if(!TTS.boundary) return;
+    const k = e.charIndex - c.pre; if(k < 0) return;
+    const f = c.shown.length / Math.max(1, c.clean.length);
+    hlWord(c, Math.round(k*f), e.charLength ? Math.max(1, Math.round(e.charLength*f)) : 0);
+  };
+  u.onend = ()=>{ if(TTS.cur!==u) return; ttsTimerStop();
+    if(t0 && c.total && !TTS.boundary){ const dur = (performance.now()-t0)/1000; if(dur>0.8){ const cps = c.total/(dur*TTS.rate); if(cps>1 && cps<60) TTS.cps[LANG] = TTS.cps[LANG]*0.6 + cps*0.4; } }
+    ttsNext(); };
+  u.onerror = e=>{ if(TTS.cur===u && e.error!=="interrupted" && e.error!=="canceled"){ ttsTimerStop(); ttsNext(); } };
+  speechSynthesis.speak(u);
+  clearTimeout(TTS.watch);
+  TTS.watch = setTimeout(()=>{ if(TTS.on && !TTS.paused && TTS.cur===u && !TTS.started && !speechSynthesis.speaking){ const m=document.getElementById("ttsMsg"); if(m){ m.textContent = T("没有声音？iPhone 请关掉静音模式（侧边静音键），或改用 Chrome 打开。"); m.dataset.hint = "1"; } } }, 2500);
+}
 function ttsUI(){ const a=document.getElementById("ttsPlay"), b=document.getElementById("ttsStop"); if(!a) return; a.textContent = TTS.on ? (TTS.paused ? T("▶ 继续") : T("❚❚ 暂停")) : T("▶ 听讲解"); b.hidden = !TTS.on; }
 // iPhone/Safari notes: speak() must start inside the tap; calling cancel() right before speak() can silently drop it;
 // pause()/resume() are unreliable, so "pause" = stop and remember the sentence; keep a reference to the utterance so onend fires.
 function ttsHush(){ try{ if(speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel(); }catch(e){} }
 // iPhone Safari: speech always follows the Silent switch (tested; no web workaround). Chrome on iPhone is not affected.
 const IOS_SAFARI = /iP(hone|ad|od)/.test(navigator.userAgent) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(navigator.userAgent);
-function ttsStop(){ TTS.on = false; TTS.paused = false; TTS.queue = []; clearTimeout(TTS.watch); TTS.cur = null; ttsHush(); ttsMark(); ttsUI(); }
-function ttsNext(){
-  if(!TTS.on || TTS.paused) return;
-  if(TTS.idx >= TTS.queue.length){ ttsStop(); const m=document.getElementById("ttsMsg"); if(m) m.textContent = T("讲解完毕"); return; }
-  const c = TTS.queue[TTS.idx++]; ttsMark(c.pi);
-  const u = new SpeechSynthesisUtterance(c.s); u.lang = (TTS.voice && TTS.voice.lang) || ({zh:"zh-CN",en:"en-GB",ms:"ms-MY"})[LANG]; if(TTS.voice) u.voice = TTS.voice; u.rate = TTS.rate;
-  TTS.cur = u; TTS.started = false;
-  u.onstart = ()=>{ TTS.started = true; clearTimeout(TTS.watch); const m=document.getElementById("ttsMsg"); if(m && m.dataset.hint) { m.textContent = ""; delete m.dataset.hint; } };
-  u.onend = ()=>{ if(TTS.cur===u) ttsNext(); };
-  u.onerror = e=>{ if(TTS.cur===u && e.error!=="interrupted" && e.error!=="canceled") ttsNext(); };
-  speechSynthesis.speak(u);
-  clearTimeout(TTS.watch);
-  TTS.watch = setTimeout(()=>{ if(TTS.on && !TTS.paused && TTS.cur===u && !TTS.started && !speechSynthesis.speaking){ const m=document.getElementById("ttsMsg"); if(m){ m.textContent = T("没有声音？iPhone 请关掉静音模式（侧边静音键），或改用 Chrome 打开。"); m.dataset.hint = "1"; } } }, 2500);
-}
 function ttsBind(n){
   const a=document.getElementById("ttsPlay"); if(!a) return;
   const m=document.getElementById("ttsMsg"), r=document.getElementById("ttsRate");
@@ -1372,137 +1467,6 @@ setInterval(()=>{
   document.querySelectorAll(".cd").forEach(x=> x.textContent = fmt(msToMidnight()));
 }, 1000);
 boot();
-
-/* ===== src/app/js-10/1-read-aloud-highlight.js ===== */
-/* ---------- 10-day page only: read-aloud follow-along highlight ----------
-   Loaded after js-app/07-read-aloud.js, so these functions replace ttsScript / ttsMark / ttsStop / ttsNext there.
-   Each spoken sentence remembers which on-screen text it reads (el + start/end offsets), so the page can
-   shade the sentence and mark the character (Chinese) or word (English / Malay) being read right now.
-   Where the browser reports word positions (onboundary: iPhone, Mac), those are used; otherwise the position
-   is estimated from elapsed time and the speed is re-calibrated after every sentence. */
-function ttsSegs(s){ // [start,end] sentence ranges inside s (same breaks as ttsSplit)
-  s = String(s||""); const out = [], max = LANG==="zh"?140:220;
-  const push = (a,b)=>{ while(b-a>max){ let k = a+max; if(LANG!=="zh"){ const sp = s.lastIndexOf(" ", a+max); if(sp>a+60) k = sp; } out.push([a,k]); a = k; } if(s.slice(a,b).trim()) out.push([a,b]); };
-  const ends = []; s.replace(/[。！？；!?;]+|\.\s/g, (x,off)=>{ ends.push(off+x.length); return x; });
-  let a = 0; ends.forEach(e=>{ push(a,e); a = e; }); push(a, s.length);
-  return out;
-}
-function ttsScript(n){
-  const d = DAYS[n-1], q = QS[n-1], parts = [];
-  const zh = LANG==="zh", dot = x => /[。！？.!?:：]$/.test(String(x).trim()) ? "" : (zh?"。":".");
-  const lesson = document.getElementById("lesson");
-  const $ = sel => typeof sel==="string" ? lesson.querySelector(sel) : sel;
-  // text: what is shown; el: where it is shown; pre/suf: spoken words that are not on screen
-  const add = (text, pi, el, pre, suf) => {
-    el = el ? $(el) : null; text = String(text||""); pre = pre||""; suf = suf||"";
-    const base = el ? el.textContent.indexOf(text) : -1;
-    const segs = ttsSegs(text);
-    if(!segs.length){ if(pre||suf) parts.push({s:ttsClean(pre+suf), pi}); return; }
-    segs.forEach(([a,b],k)=>{
-      const p = k===0?pre:"", x = k===segs.length-1?suf:"";
-      const shown = text.slice(a,b), clean = ttsClean(shown), cp = ttsClean(p), cx = ttsClean(x);
-      const s = (cp?cp+(zh?"":" "):"")+clean+(cx?(zh?"":" ")+cx:"");
-      parts.push({s, pi, el, a: base<0?-1:base+a, b: base<0?-1:base+b, shown, pre: s.indexOf(clean), clean});
-    });
-  };
-  const box = i => lesson.querySelector('.points>li[data-pi="'+i+'"]>div');
-  add(d.t, undefined, "h2", DN(n).replace(/ /g, zh?"":" ")+(zh?"，":". "), dot(d.t));
-  if(d.lead) add(d.lead, undefined, d.leadHL ? ".lead-hl p" : ".lead");
-  if(d.intro) add(d.intro, undefined, ".intro");
-  if(q && q.q) add(q.q, undefined, ".hook .q", T("先想一想："), T(" 想好了，可以在页面上选出你的答案。"));
-  if(d.points){
-    add(T("今天要知道的 {0} 件事", d.points.length), undefined, ".sec h3");
-    d.points.forEach((p,i)=>{ const b = box(i);
-      add(p.h, i, b && b.querySelector(":scope>b"), T("第{0}点，", i+1));
-      add(p.p, i, b && b.querySelector(":scope>.pt"));
-      (p.list||[]).forEach((x,j)=>add(x, i, b && b.querySelectorAll(":scope>.sub>li")[j], "", dot(x)));
-      if(p.after) add(p.after, i, b && b.querySelector(":scope>.pt-after"));
-    });
-  }
-  if(d.fact){ add(d.fact.num+(d.fact.unit||""), undefined, ".fact .num", T("关键数字：")); add(d.fact.text, undefined, ".fact p"); }
-  if(d.myth){ add(d.myth.m, undefined, ".myth .m p", T("常见误区：")); add(d.myth.f, undefined, ".myth .f p", T(" 真相是：").trim()); }
-  if(d.tips && d.tips.length){ const lis = lesson.querySelectorAll(".tips>li"); d.tips.forEach((t,i)=>add(t, undefined, lis[i], i===0?T("实用小技巧："):"", dot(t))); }
-  if(d.share) add(d.share, undefined, ".share .sq", T("想一想："));
-  if(d.task) add(d.task, undefined, ".task>p", T("今日小任务："));
-  parts.push({s: ttsClean(T("今天的讲解到这里，记得完成今日小任务。"))});
-  return parts;
-}
-
-const HL = (typeof CSS!=="undefined" && CSS.highlights && typeof Highlight!=="undefined") ? { sent: new Highlight(), read: new Highlight(), word: new Highlight() } : null;
-if(HL){ HL.sent.priority = 1; HL.read.priority = 2; HL.word.priority = 3; CSS.highlights.set("tts-sent", HL.sent); CSS.highlights.set("tts-read", HL.read); CSS.highlights.set("tts-word", HL.word); }
-function hlRange(el, a, b){
-  if(!el || a<0 || b<=a) return null;
-  const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let pos = 0, node, st = false; const r = document.createRange();
-  while((node = w.nextNode())){ const L = node.length;
-    if(!st && a < pos+L){ r.setStart(node, a-pos); st = true; }
-    if(st && b <= pos+L){ r.setEnd(node, b-pos); return r; }
-    pos += L; }
-  if(st){ r.setEndAfter(el.lastChild||el); return r; } return null;
-}
-function hlClear(){ if(HL){ HL.sent.clear(); HL.read.clear(); HL.word.clear(); } document.querySelectorAll(".tts-el").forEach(x=>x.classList.remove("tts-el")); }
-function hlSentence(c){
-  hlClear(); if(!c || !c.el) return;
-  if(HL && c.a>=0){ const r = hlRange(c.el, c.a, c.b); if(r) HL.sent.add(r); } else c.el.classList.add("tts-el");
-  const rc = c.el.getBoundingClientRect();
-  if(rc.top < 70 || rc.bottom > innerHeight-40) c.el.scrollIntoView({behavior:"smooth", block:"center"});
-}
-function hlWord(c, pos, len){ // pos/len in shown-text coordinates
-  if(!HL || !c || !c.el || c.a<0) return;
-  const L = c.shown.length; pos = Math.max(0, Math.min(L, pos));
-  while(pos < L && /[\s，。、！？；：,.!?;:“”「」（）()·]/.test(c.shown[pos])) pos++;
-  HL.word.clear(); HL.read.clear();
-  if(pos >= L){ const r = hlRange(c.el, c.a, c.b); if(r) HL.read.add(r); return; }
-  let e = pos + Math.max(1, len||0);
-  if(!len){ if(/[㐀-鿿]/.test(c.shown[pos])) e = pos+1; else { e = pos; while(e < L && /[A-Za-z0-9À-ÿ'’%.\-]/.test(c.shown[e]) && !(c.shown[e]==="." && !/\d/.test(c.shown[e+1]||""))) e++; if(e===pos) e = pos+1; } }
-  const rw = hlRange(c.el, c.a+pos, c.a+Math.min(L,e)); if(rw) HL.word.add(rw);
-  if(pos>0){ const rr = hlRange(c.el, c.a, c.a+pos); if(rr) HL.read.add(rr); }
-}
-// time model for voices that don't report positions: weight per shown character, speed learned as it reads
-function ttsW(ch){ if(/[㐀-鿿]/.test(ch)) return 1; if(/[。！？；!?;]/.test(ch)) return 2.2; if(/[，、：,:]/.test(ch)) return 1.4; if(/\s/.test(ch)) return LANG==="zh"?0.2:0.35; if(/\d/.test(ch)) return LANG==="zh"?0.9:0.55; return LANG==="zh"?0.45:0.3; }
-function ttsWeights(str){ let t = 0; for(const ch of String(str)) t += ttsW(ch); return t; }
-TTS.cps = {zh:4.6, en:15, ms:14};
-function ttsTimerStop(){ if(TTS.timer){ clearInterval(TTS.timer); TTS.timer = null; } }
-function ttsTimerStart(c, u){
-  ttsTimerStop(); if(!c.el || c.a<0) return;
-  const preW = ttsWeights(c.s.slice(0, Math.max(0,c.pre))), cum = []; let t = preW;
-  for(const ch of c.shown){ cum.push(t); t += ttsW(ch); }
-  c.total = t + ttsWeights(c.s.slice(c.pre + c.clean.length)); c.elapsed = 0; let last = performance.now();
-  TTS.timer = setInterval(()=>{
-    if(TTS.cur!==u || TTS.paused){ ttsTimerStop(); return; }
-    const now = performance.now(), dt = (now-last)/1000; last = now;
-    if(TTS.boundary) return;
-    c.elapsed += dt; const w = c.elapsed * TTS.cps[LANG] * TTS.rate;
-    if(w < preW) return;
-    let i = 0; while(i < cum.length-1 && cum[i+1] <= w) i++;
-    hlWord(c, i);
-  }, 90);
-}
-function ttsMark(pi){ document.querySelectorAll(".points>li.reading").forEach(x=>x.classList.remove("reading")); if(pi!==undefined){ const li = document.querySelector('.points>li[data-pi="'+pi+'"]'); if(li) li.classList.add("reading"); } if(!TTS.on) hlClear(); }
-function ttsStop(){ TTS.on = false; TTS.paused = false; TTS.queue = []; clearTimeout(TTS.watch); TTS.cur = null; ttsTimerStop(); ttsHush(); ttsMark(); ttsUI(); }
-function ttsNext(){
-  if(!TTS.on || TTS.paused) return;
-  ttsTimerStop();
-  if(TTS.idx >= TTS.queue.length){ ttsStop(); const m=document.getElementById("ttsMsg"); if(m) m.textContent = T("讲解完毕"); return; }
-  const c = TTS.queue[TTS.idx++]; ttsMark(c.pi); hlSentence(c);
-  const u = new SpeechSynthesisUtterance(c.s); u.lang = (TTS.voice && TTS.voice.lang) || ({zh:"zh-CN",en:"en-GB",ms:"ms-MY"})[LANG]; if(TTS.voice) u.voice = TTS.voice; u.rate = TTS.rate;
-  TTS.cur = u; TTS.started = false; let t0 = 0;
-  u.onstart = ()=>{ TTS.started = true; clearTimeout(TTS.watch); const m=document.getElementById("ttsMsg"); if(m && m.dataset.hint) { m.textContent = ""; delete m.dataset.hint; }
-    if(TTS.cur===u){ t0 = performance.now(); ttsTimerStart(c, u); } };
-  u.onboundary = e=>{
-    if(TTS.cur!==u || e.name==="sentence" || !c.el || c.a<0) return;
-    if(e.charIndex>0 || e.charLength) TTS.boundary = true; if(!TTS.boundary) return;
-    const k = e.charIndex - c.pre; if(k < 0) return;
-    const f = c.shown.length / Math.max(1, c.clean.length);
-    hlWord(c, Math.round(k*f), e.charLength ? Math.max(1, Math.round(e.charLength*f)) : 0);
-  };
-  u.onend = ()=>{ if(TTS.cur!==u) return; ttsTimerStop();
-    if(t0 && c.total && !TTS.boundary){ const dur = (performance.now()-t0)/1000; if(dur>0.8){ const cps = c.total/(dur*TTS.rate); if(cps>1 && cps<60) TTS.cps[LANG] = TTS.cps[LANG]*0.6 + cps*0.4; } }
-    ttsNext(); };
-  u.onerror = e=>{ if(TTS.cur===u && e.error!=="interrupted" && e.error!=="canceled"){ ttsTimerStop(); ttsNext(); } };
-  speechSynthesis.speak(u);
-  clearTimeout(TTS.watch);
-  TTS.watch = setTimeout(()=>{ if(TTS.on && !TTS.paused && TTS.cur===u && !TTS.started && !speechSynthesis.speaking){ const m=document.getElementById("ttsMsg"); if(m){ m.textContent = T("没有声音？iPhone 请关掉静音模式（侧边静音键），或改用 Chrome 打开。"); m.dataset.hint = "1"; } } }, 2500);
-}
 
 </script>
 </body></html>
