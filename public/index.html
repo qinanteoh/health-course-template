@@ -1003,9 +1003,6 @@ function lessonHTML(n){
     '<h2>'+esc(d.t)+'</h2>'+(LANG==="zh"&&d.en?'<div class="en">'+esc(d.en)+'</div>':'')+'</div>'+
     '<div class="tts" id="tts"><button type="button" class="tts-btn" id="ttsPlay">'+T('▶ 听讲解')+'</button><button type="button" class="tts-btn ghost" id="ttsStop" hidden>'+T('■ 停止')+'</button><label class="tts-rate" for="ttsRate">'+T('语速')+'<select id="ttsRate"><option value="0.85">'+T('慢')+'</option><option value="1" selected>'+T('正常')+'</option><option value="1.2">'+T('快')+'</option></select></label><span class="tts-msg" id="ttsMsg" aria-live="polite"></span></div>'+
     hookHTML(n)+(d.leadHL?'<div class="lead-hl"><span>'+T('今日重点')+'</span><p>'+esc(d.lead)+'</p></div>':'<p class="lead">'+esc(d.lead)+'</p>')+'<p class="intro">'+esc(d.intro)+'</p>';
-  if(d.videos && d.videos.length) h += '<section class="sec videos"><h3>'+T('今天的影片')+'</h3>'+d.videos.map(v=>
-    '<figure class="yt"><button type="button" class="yt-play" data-yt="'+esc(v.id)+'" aria-label="'+T('播放影片：')+esc(v.title)+'"><img loading="lazy" src="https://i.ytimg.com/vi/'+esc(v.id)+'/hqdefault.jpg" alt="" width="480" height="360" onerror="this.style.visibility=\'hidden\'"><span class="yt-btn" aria-hidden="true"></span></button>'+
-    '<figcaption><span>'+esc(v.title)+'</span><a href="https://youtu.be/'+esc(v.id)+'" target="_blank" rel="noopener">'+T('在 YouTube 打开')+'</a></figcaption></figure>').join("")+'</section>';
   h += '<section class="sec"><h3>'+T('今天要知道的 {0} 件事', d.points.length)+'</h3><ol class="points">'+d.points.map((p,pi)=>'<li data-pi="'+pi+'"><div><b>'+esc(p.h)+'</b><span class="pt">'+esc(p.p)+'</span>'+(p.list?'<ul class="sub">'+p.list.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>':'')+(p.after?'<span class="pt pt-after">'+esc(p.after)+'</span>':'')+foodsHTML(p.foods)+(p.viz?'<div class="pviz">'+p.viz.map(vizHTML).join("")+'</div>':'')+figsHTML(p.img,p.imgFull)+'</div></li>').join("")+'</ol></section>';
   if(d.viz && d.viz.length) h += '<section class="sec"><h3>'+T('图解')+'</h3>'+d.viz.map(vizHTML).join("")+'</section>';
   h += '<div class="fact"><div class="num">'+esc(d.fact.num)+(d.fact.unit?'<small>'+esc(d.fact.unit)+'</small>':'')+'</div><p>'+esc(d.fact.text)+'</p></div>';
@@ -1020,6 +1017,10 @@ function lessonHTML(n){
     (d.calc==="water"?'<div class="calc"><label for="wt">'+T('我的体重')+'</label><input id="wt" data-k="water" type="number" inputmode="decimal" min="25" max="250" placeholder="60">'+T(' 公斤 → 每天约 ')+'<output id="wtOut">'+T('{0}–{1} 公升（约 {2}–{3} 杯）','2.4','3.0',6,8)+'</output></div>':'')+'</div>';
   if(d.template){ const tp=d.template;
     h += '<section class="tmpl"><div class="eyebrow">'+T('拍照模板')+'</div><h3>'+esc(tp.title)+'</h3><button type="button" data-zoom="fig/'+tp.img+'.jpg" aria-label="'+T("放大查看：")+esc(tp.title)+'"><img loading="lazy" src="fig/'+tp.img+'.jpg" alt="'+esc(tp.title)+'" width="960" height="960"></button><ol>'+tp.tips.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ol><p>'+esc(tp.note)+'</p></section>'; }
+  // videos come last, after the day's lesson and task
+  if(d.videos && d.videos.length) h += '<section class="sec videos"><h3>'+T('今天的影片')+'</h3>'+d.videos.map(v=>
+    '<figure class="yt"><button type="button" class="yt-play" data-yt="'+esc(v.id)+'" aria-label="'+T('播放影片：')+esc(v.title)+'"><img loading="lazy" src="https://i.ytimg.com/vi/'+esc(v.id)+'/hqdefault.jpg" alt="" width="480" height="360" onerror="this.style.visibility=\'hidden\'"><span class="yt-btn" aria-hidden="true"></span></button>'+
+    '<figcaption><span>'+esc(v.title)+'</span><a href="https://youtu.be/'+esc(v.id)+'" target="_blank" rel="noopener">'+T('在 YouTube 打开')+'</a></figcaption></figure>').join("")+'</section>';
   if(s==="today"){
     h += '<div class="actions"><button class="btn" id="finishBtn" type="button">'+T('我已读完第 {0} 天', n)+'</button><p class="note">'+(n<LIMIT?T('按下后，第 {0} 天会在明天凌晨 00:00 解锁。', n+1):T('按下后就完成全部 21 天课程。'))+'</p></div>';
   } else if(s==="done"){
