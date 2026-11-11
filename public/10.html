@@ -227,6 +227,15 @@ header p{color:var(--muted)}
 .points .rb-it span{font-size:13px;color:var(--ink);line-height:1.4}
 .points .rb-it b{font-family:var(--display);font-size:20px;color:var(--sun);font-variant-numeric:tabular-nums;line-height:1.2}
 .rb-it b small{font-family:var(--body);font-size:11px;color:var(--muted)}
+.videos{display:flex;flex-direction:column;gap:12px}
+.yt{margin:0;display:flex;flex-direction:column;gap:6px}
+.yt-play,.yt-frame{display:block;width:100%;aspect-ratio:16/9;border:0;border-radius:12px;overflow:hidden;background:#000;padding:0;position:relative;cursor:pointer}
+.yt-play img{width:100%;height:100%;object-fit:cover;display:block}
+.yt-btn{position:absolute;left:50%;top:50%;width:68px;height:48px;transform:translate(-50%,-50%);background:#e62117;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.3)}
+.yt-btn::after{content:"";position:absolute;left:27px;top:14px;border-style:solid;border-width:10px 0 10px 18px;border-color:transparent transparent transparent #fff}
+.yt figcaption{display:flex;justify-content:space-between;gap:10px;align-items:baseline;font-size:14px;flex-wrap:wrap}
+.yt figcaption span{font-weight:700}
+.yt figcaption a{color:var(--muted);font-size:13px;white-space:nowrap}
 
 /* ===== src/app/css/3-charts-a.css ===== */
 .ct{display:flex;flex-direction:column;gap:10px}
@@ -713,6 +722,9 @@ var I18N = {
 "内容已隐藏":["Content hidden","Kandungan disembunyikan"],
 "回到这个页面即可继续阅读":["Return to this page to keep reading","Kembali ke halaman ini untuk terus membaca"],
 "声明：本课程内容仅供内部训练使用，版权所有。未经许可，请勿截图、转发、复制或公开分享。":["Notice: This course is for internal training use only. All rights reserved. Do not screenshot, forward, copy or share it publicly without permission.","Notis: Kandungan kursus ini untuk kegunaan latihan dalaman sahaja. Hak cipta terpelihara. Dilarang tangkap layar, majukan, salin atau kongsi secara terbuka tanpa kebenaran."],
+"今天的影片":["Today's video","Video hari ini"],
+"播放影片：":["Play video: ","Main video: "],
+"在 YouTube 打开":["Open in YouTube","Buka di YouTube"],
 "管理员入口":["Admin login","Log masuk pentadbir"],
 "仅供内部训练使用":["For internal training only","Untuk latihan dalaman sahaja"],
 "正在载入 {0}…":["Loading {0}…","Memuatkan {0}…"],
@@ -1000,6 +1012,9 @@ function lessonHTML(n){
     '<h2>'+esc(d.t)+'</h2>'+(LANG==="zh"&&d.en?'<div class="en">'+esc(d.en)+'</div>':'')+'</div>'+
     '<div class="tts" id="tts"><button type="button" class="tts-btn" id="ttsPlay">'+T('▶ 听讲解')+'</button><button type="button" class="tts-btn ghost" id="ttsStop" hidden>'+T('■ 停止')+'</button><label class="tts-rate" for="ttsRate">'+T('语速')+'<select id="ttsRate"><option value="0.85">'+T('慢')+'</option><option value="1" selected>'+T('正常')+'</option><option value="1.2">'+T('快')+'</option></select></label><span class="tts-msg" id="ttsMsg" aria-live="polite"></span></div>'+
     hookHTML(n)+(d.leadHL?'<div class="lead-hl"><span>'+T('今日重点')+'</span><p>'+esc(d.lead)+'</p></div>':'<p class="lead">'+esc(d.lead)+'</p>')+'<p class="intro">'+esc(d.intro)+'</p>';
+  if(d.videos && d.videos.length) h += '<section class="sec videos"><h3>'+T('今天的影片')+'</h3>'+d.videos.map(v=>
+    '<figure class="yt"><button type="button" class="yt-play" data-yt="'+esc(v.id)+'" aria-label="'+T('播放影片：')+esc(v.title)+'"><img loading="lazy" src="https://i.ytimg.com/vi/'+esc(v.id)+'/hqdefault.jpg" alt="" width="480" height="360" onerror="this.style.visibility=\'hidden\'"><span class="yt-btn" aria-hidden="true"></span></button>'+
+    '<figcaption><span>'+esc(v.title)+'</span><a href="https://youtu.be/'+esc(v.id)+'" target="_blank" rel="noopener">'+T('在 YouTube 打开')+'</a></figcaption></figure>').join("")+'</section>';
   h += '<section class="sec"><h3>'+T('今天要知道的 {0} 件事', d.points.length)+'</h3><ol class="points">'+d.points.map((p,pi)=>'<li data-pi="'+pi+'"><div><b>'+esc(p.h)+'</b><span class="pt">'+esc(p.p)+'</span>'+(p.list?'<ul class="sub">'+p.list.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>':'')+(p.after?'<span class="pt pt-after">'+esc(p.after)+'</span>':'')+foodsHTML(p.foods)+(p.viz?'<div class="pviz">'+p.viz.map(vizHTML).join("")+'</div>':'')+figsHTML(p.img,p.imgFull)+'</div></li>').join("")+'</ol></section>';
   if(d.viz && d.viz.length) h += '<section class="sec"><h3>'+T('图解')+'</h3>'+d.viz.map(vizHTML).join("")+'</section>';
   h += '<div class="fact"><div class="num">'+esc(d.fact.num)+(d.fact.unit?'<small>'+esc(d.fact.unit)+'</small>':'')+'</div><p>'+esc(d.fact.text)+'</p></div>';
@@ -1203,6 +1218,14 @@ document.getElementById("lbClose").addEventListener("click", ()=>{ lb.hidden = t
 lb.addEventListener("click", e=>{ if(e.target===lb) lb.hidden = true; });
 document.addEventListener("keydown", e=>{ if(e.key==="Escape") lb.hidden = true; });
 
+// lesson videos: load the YouTube player only when tapped (keeps the page light)
+document.addEventListener("click", e=>{
+  const b = e.target.closest && e.target.closest("[data-yt]"); if(!b) return;
+  const f = document.createElement("iframe");
+  f.src = "https://www.youtube-nocookie.com/embed/"+encodeURIComponent(b.dataset.yt)+"?autoplay=1&rel=0&playsinline=1";
+  f.title = b.getAttribute("aria-label") || "YouTube"; f.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen"; f.allowFullscreen = true;
+  f.className = "yt-frame"; b.replaceWith(f);
+});
 
 /* ===== src/app/js-app/09-protection.js ===== */
 function fmtDate(iso){ const d = new Date(Date.parse(iso)+8*3600e3); return langDate(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate()); }
@@ -1220,7 +1243,7 @@ function setWatermark(text){
 const shield = document.getElementById("shield");
 const hide = ()=>{ shield.hidden = false; };
 const show = ()=>{ shield.hidden = true; };
-window.addEventListener("blur", hide); window.addEventListener("focus", show);
+window.addEventListener("blur", ()=>setTimeout(()=>{ const a = document.activeElement; if(!(a && a.tagName==="IFRAME")) hide(); }, 0)); window.addEventListener("focus", show);
 document.addEventListener("visibilitychange", ()=>{ document.hidden ? hide() : show(); });
 ["contextmenu","copy","cut","dragstart","selectstart"].forEach(ev=>document.addEventListener(ev, e=>{ if(!(e.target.closest && e.target.closest("input,textarea"))) e.preventDefault(); }));
 document.addEventListener("keydown", e=>{
